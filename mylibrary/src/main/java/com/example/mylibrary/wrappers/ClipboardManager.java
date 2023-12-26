@@ -8,14 +8,14 @@ import android.os.IInterface;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
-public class ClipboardManager {
+public final class ClipboardManager {
     private final IInterface manager;
     private Method getPrimaryClipMethod;
     private Method setPrimaryClipMethod;
     private Method addPrimaryClipChangedListener;
-    private boolean alternativeGetMethod;
-    private boolean alternativeSetMethod;
-    private boolean alternativeAddListenerMethod;
+    private int getMethodVersion;
+    private int setMethodVersion;
+    private int addListenerMethodVersion;
 
     public ClipboardManager(IInterface manager) {
         this.manager = manager;
@@ -28,9 +28,26 @@ public class ClipboardManager {
             } else {
                 try {
                     getPrimaryClipMethod = manager.getClass().getMethod("getPrimaryClip", String.class, int.class);
-                } catch (NoSuchMethodException e) {
-                    getPrimaryClipMethod = manager.getClass().getMethod("getPrimaryClip", String.class, String.class, int.class);
-                    alternativeGetMethod = true;
+                    getMethodVersion = 0;
+                } catch (NoSuchMethodException e1) {
+                    try {
+                        getPrimaryClipMethod = manager.getClass().getMethod("getPrimaryClip", String.class, String.class, int.class);
+                        getMethodVersion = 1;
+                    } catch (NoSuchMethodException e2) {
+                        try {
+                            getPrimaryClipMethod = manager.getClass().getMethod("getPrimaryClip", String.class, String.class, int.class, int.class);
+                            getMethodVersion = 2;
+                        } catch (NoSuchMethodException e3) {
+                            try {
+                                getPrimaryClipMethod = manager.getClass().getMethod("getPrimaryClip", String.class, int.class, String.class);
+                                getMethodVersion = 3;
+                            } catch (NoSuchMethodException e4) {
+                                getPrimaryClipMethod = manager.getClass()
+                                        .getMethod("getPrimaryClip", String.class, String.class, int.class, int.class, boolean.class);
+                                getMethodVersion = 4;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -44,41 +61,67 @@ public class ClipboardManager {
             } else {
                 try {
                     setPrimaryClipMethod = manager.getClass().getMethod("setPrimaryClip", ClipData.class, String.class, int.class);
-                } catch (NoSuchMethodException e) {
-                    setPrimaryClipMethod = manager.getClass().getMethod("setPrimaryClip", ClipData.class, String.class, String.class, int.class);
-                    alternativeSetMethod = true;
+                    setMethodVersion = 0;
+                } catch (NoSuchMethodException e1) {
+                    try {
+                        setPrimaryClipMethod = manager.getClass().getMethod("setPrimaryClip", ClipData.class, String.class, String.class, int.class);
+                        setMethodVersion = 1;
+                    } catch (NoSuchMethodException e2) {
+                        setPrimaryClipMethod = manager.getClass()
+                                .getMethod("setPrimaryClip", ClipData.class, String.class, String.class, int.class, int.class);
+                        setMethodVersion = 2;
+                    }
                 }
             }
         }
         return setPrimaryClipMethod;
     }
 
-    private static ClipData getPrimaryClip(Method method, boolean alternativeMethod, IInterface manager)
+    private static ClipData getPrimaryClip(Method method, int methodVersion, IInterface manager)
             throws InvocationTargetException, IllegalAccessException {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             return (ClipData) method.invoke(manager, FakeContext.PACKAGE_NAME);
         }
-        if (alternativeMethod) {
-            return (ClipData) method.invoke(manager, FakeContext.PACKAGE_NAME, null, FakeContext.ROOT_UID);
+
+        switch (methodVersion) {
+            case 0:
+                return (ClipData) method.invoke(manager, FakeContext.PACKAGE_NAME, FakeContext.ROOT_UID);
+            case 1:
+                return (ClipData) method.invoke(manager, FakeContext.PACKAGE_NAME, null, FakeContext.ROOT_UID);
+            case 2:
+                return (ClipData) method.invoke(manager, FakeContext.PACKAGE_NAME, null, FakeContext.ROOT_UID, 0);
+            case 3:
+                return (ClipData) method.invoke(manager, FakeContext.PACKAGE_NAME, FakeContext.ROOT_UID, null);
+            default:
+                // The last boolean parameter is "userOperate"
+                return (ClipData) method.invoke(manager, FakeContext.PACKAGE_NAME, null, FakeContext.ROOT_UID, 0, true);
         }
-        return (ClipData) method.invoke(manager, FakeContext.PACKAGE_NAME, FakeContext.ROOT_UID);
     }
 
-    private static void setPrimaryClip(Method method, boolean alternativeMethod, IInterface manager, ClipData clipData)
+    private static void setPrimaryClip(Method method, int methodVersion, IInterface manager, ClipData clipData)
             throws InvocationTargetException, IllegalAccessException {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             method.invoke(manager, clipData, FakeContext.PACKAGE_NAME);
-        } else if (alternativeMethod) {
-            method.invoke(manager, clipData, FakeContext.PACKAGE_NAME, null, FakeContext.ROOT_UID);
-        } else {
-            method.invoke(manager, clipData, FakeContext.PACKAGE_NAME, FakeContext.ROOT_UID);
+            return;
+        }
+
+        switch (methodVersion) {
+            case 0:
+                method.invoke(manager, clipData, FakeContext.PACKAGE_NAME, FakeContext.ROOT_UID);
+                break;
+            case 1:
+                method.invoke(manager, clipData, FakeContext.PACKAGE_NAME, null, FakeContext.ROOT_UID);
+                break;
+            default:
+                method.invoke(manager, clipData, FakeContext.PACKAGE_NAME, null, FakeContext.ROOT_UID, 0);
+                break;
         }
     }
 
     public CharSequence getText() {
         try {
             Method method = getGetPrimaryClipMethod();
-            ClipData clipData = getPrimaryClip(method, alternativeGetMethod, manager);
+            ClipData clipData = getPrimaryClip(method, getMethodVersion, manager);
             if (clipData == null || clipData.getItemCount() == 0) {
                 return null;
             }
@@ -93,7 +136,7 @@ public class ClipboardManager {
         try {
             Method method = getSetPrimaryClipMethod();
             ClipData clipData = ClipData.newPlainText(null, text);
-            setPrimaryClip(method, alternativeSetMethod, manager, clipData);
+            setPrimaryClip(method, setMethodVersion, manager, clipData);
             return true;
         } catch (InvocationTargetException | IllegalAccessException | NoSuchMethodException e) {
             Ln.e("Could not invoke method", e);
@@ -101,14 +144,23 @@ public class ClipboardManager {
         }
     }
 
-    private static void addPrimaryClipChangedListener(Method method, boolean alternativeMethod, IInterface manager,
-            IOnPrimaryClipChangedListener listener) throws InvocationTargetException, IllegalAccessException {
+    private static void addPrimaryClipChangedListener(Method method, int methodVersion, IInterface manager, IOnPrimaryClipChangedListener listener)
+            throws InvocationTargetException, IllegalAccessException {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             method.invoke(manager, listener, FakeContext.PACKAGE_NAME);
-        } else if (alternativeMethod) {
-            method.invoke(manager, listener, FakeContext.PACKAGE_NAME, null, FakeContext.ROOT_UID);
-        } else {
-            method.invoke(manager, listener, FakeContext.PACKAGE_NAME, FakeContext.ROOT_UID);
+            return;
+        }
+
+        switch (methodVersion) {
+            case 0:
+                method.invoke(manager, listener, FakeContext.PACKAGE_NAME, FakeContext.ROOT_UID);
+                break;
+            case 1:
+                method.invoke(manager, listener, FakeContext.PACKAGE_NAME, null, FakeContext.ROOT_UID);
+                break;
+            default:
+                method.invoke(manager, listener, FakeContext.PACKAGE_NAME, null, FakeContext.ROOT_UID, 0);
+                break;
         }
     }
 
@@ -121,10 +173,19 @@ public class ClipboardManager {
                 try {
                     addPrimaryClipChangedListener = manager.getClass()
                             .getMethod("addPrimaryClipChangedListener", IOnPrimaryClipChangedListener.class, String.class, int.class);
-                } catch (NoSuchMethodException e) {
-                    addPrimaryClipChangedListener = manager.getClass()
-                            .getMethod("addPrimaryClipChangedListener", IOnPrimaryClipChangedListener.class, String.class, String.class, int.class);
-                    alternativeAddListenerMethod = true;
+                    addListenerMethodVersion = 0;
+                } catch (NoSuchMethodException e1) {
+                    try {
+                        addPrimaryClipChangedListener = manager.getClass()
+                                .getMethod("addPrimaryClipChangedListener", IOnPrimaryClipChangedListener.class, String.class, String.class,
+                                        int.class);
+                        addListenerMethodVersion = 1;
+                    } catch (NoSuchMethodException e2) {
+                        addPrimaryClipChangedListener = manager.getClass()
+                                .getMethod("addPrimaryClipChangedListener", IOnPrimaryClipChangedListener.class, String.class, String.class,
+                                        int.class, int.class);
+                        addListenerMethodVersion = 2;
+                    }
                 }
             }
         }
@@ -134,7 +195,7 @@ public class ClipboardManager {
     public boolean addPrimaryClipChangedListener(IOnPrimaryClipChangedListener listener) {
         try {
             Method method = getAddPrimaryClipChangedListener();
-            addPrimaryClipChangedListener(method, alternativeAddListenerMethod, manager, listener);
+            addPrimaryClipChangedListener(method, addListenerMethodVersion, manager, listener);
             return true;
         } catch (InvocationTargetException | IllegalAccessException | NoSuchMethodException e) {
             Ln.e("Could not invoke method", e);

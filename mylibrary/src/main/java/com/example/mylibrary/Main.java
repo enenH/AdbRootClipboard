@@ -8,13 +8,14 @@ import com.example.mylibrary.wrappers.ClipboardManager;
 import com.example.mylibrary.wrappers.ServiceManager;
 
 public class Main {
+    public static final int SHELL_UID = 2000;
+
     public static void main(String[] args) {
         //为root用户设置uid为shell用户
         if (Os.getuid() == 0) {
             try {
-                Os.seteuid(Process.SHELL_UID);
+                Os.seteuid(SHELL_UID);
             } catch (ErrnoException ignored) {
-
             }
         }
         ClipboardManager manager = ServiceManager.getClipboardManager();
