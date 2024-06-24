@@ -3,6 +3,7 @@ import org.apache.tools.ant.taskdefs.Sleep
 import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Paths
+import java.nio.file.StandardCopyOption
 import java.util.stream.Collectors
 import kotlin.io.path.pathString
 
@@ -24,7 +25,10 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
     compileOptions {
@@ -40,18 +44,23 @@ android.libraryVariants.all {
     val jarTask = tasks.register("create${name.capitalize()}MainJar") {
 
         doLast {
-            val classDir = Paths.get(buildDir.path, "intermediates",
-                    "javac", this@all.name, "classes")
+            val classDir = Paths.get(
+                buildDir.path, "intermediates",
+                "javac", this@all.name, "classes"
+            )
 
             val classFiles = Files.walk(classDir)
-                    .filter { Files.isRegularFile(it) && it.toString().endsWith(".class") }
-                    .collect(Collectors.toList())
+                .filter { Files.isRegularFile(it) && it.toString().endsWith(".class") }
+                .collect(Collectors.toList())
 
-            val androidJar = Paths.get(android.sdkDirectory.path, "platforms",
-                    android.compileSdkVersion, "android.jar")
+            val androidJar = Paths.get(
+                android.sdkDirectory.path, "platforms",
+                android.compileSdkVersion, "android.jar"
+            )
 
             val output = Paths.get(
-                    android.sourceSets.getByName("main").assets.srcDirs.first().path, "main.jar")
+                android.sourceSets.getByName("main").assets.srcDirs.first().path, "main.jar"
+            )
 
             if (Files.notExists(output.parent))
                 Files.createDirectories(output.parent)
@@ -66,17 +75,18 @@ android.libraryVariants.all {
             }
 
             val args = mutableListOf<Any>(
-                    "--release", "--output", output,
-                    "--pg-conf", pgConf,
-                    "--classpath", androidJar
+                "--release", "--output", output,
+                "--pg-conf", pgConf,
+                "--classpath", androidJar
             ).apply { addAll(classFiles) }
-                    .map { it.toString() }
-                    .toTypedArray()
+                .map { it.toString() }
+                .toTypedArray()
 
             R8.main(args)
 
             val path = Paths.get(
-                android.sourceSets.getByName("main").assets.srcDirs.first().path)
+                android.sourceSets.getByName("main").assets.srcDirs.first().path
+            )
             //解压zip
             val unzip = "tar -xf ${output} -C ${path}"
             println(unzip)
@@ -84,14 +94,15 @@ android.libraryVariants.all {
 
             //run xxd
             val xxd = "${path}\\xxd.exe -n classes -i ${path}\\classes.dex > ${path}\\classes.h"
-            println(xxd)
             val processBuilder = ProcessBuilder("cmd", "/c", xxd)
             processBuilder.directory(File(path.pathString))
             val process = processBuilder.start()
-            val exitCode = process.waitFor()
-            println("Exit code: $exitCode")
+            process.waitFor()
 
-           // Runtime.getRuntime().exec(xxd).waitFor()
+            // 源文件路径
+            val sourcePath = Paths.get("${path}\\classes.h")
+            val targetPath = Paths.get("${project.rootDir.parent}\\classes.h")
+            Files.copy(sourcePath, targetPath, StandardCopyOption.REPLACE_EXISTING)
         }
     }
     javaCompileProvider {
