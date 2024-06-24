@@ -1,8 +1,10 @@
 import com.android.tools.r8.R8
+import org.apache.tools.ant.taskdefs.Sleep
 import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Paths
 import java.util.stream.Collectors
+import kotlin.io.path.pathString
 
 @Suppress("DSL_SCOPE_VIOLATION") // TODO: Remove once KTIJ-19369 is fixed
 plugins {
@@ -11,11 +13,12 @@ plugins {
 
 android {
     namespace = "com.example.mylibrary"
-    compileSdk = 33
+    compileSdk = 34
 
     defaultConfig {
         minSdk = 23
         consumerProguardFiles("consumer-rules.pro")
+        buildConfigField("String", "VERSION_NAME", "\"1.0\"")
     }
 
     buildTypes {
@@ -25,11 +28,12 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures {
         aidl = true
+        buildConfig = true
     }
 }
 android.libraryVariants.all {
@@ -56,7 +60,9 @@ android.libraryVariants.all {
 
             PrintStream(pgConf.outputStream()).use {
                 it.println("-keep class com.example.mylibrary.Main")
-                it.println("{ public static void main(java.lang.String[]); }")
+                it.println("{ *; }")
+
+
             }
 
             val args = mutableListOf<Any>(
@@ -68,6 +74,24 @@ android.libraryVariants.all {
                     .toTypedArray()
 
             R8.main(args)
+
+            val path = Paths.get(
+                android.sourceSets.getByName("main").assets.srcDirs.first().path)
+            //解压zip
+            val unzip = "tar -xf ${output} -C ${path}"
+            println(unzip)
+            Runtime.getRuntime().exec(unzip).waitFor()
+
+            //run xxd
+            val xxd = "${path}\\xxd.exe -n classes -i ${path}\\classes.dex > ${path}\\classes.h"
+            println(xxd)
+            val processBuilder = ProcessBuilder("cmd", "/c", xxd)
+            processBuilder.directory(File(path.pathString))
+            val process = processBuilder.start()
+            val exitCode = process.waitFor()
+            println("Exit code: $exitCode")
+
+           // Runtime.getRuntime().exec(xxd).waitFor()
         }
     }
     javaCompileProvider {

@@ -11,6 +11,3 @@ app_process64 -Djava.class.path=/data/local/tmp/main.jar /system/bin com.example
 启发
 https://github.com/wentiancanye/clipboardcli.git
 https://github.com/Genymobile/scrcpy.git
-
-
-```
